@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Puppy Capture Game</title>
+  <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Patrick Hand', cursive;
+      overflow: hidden;
+      background: url('https://cdn.pixabay.com/photo/2018/03/04/09/51/space-3197611_960_720.jpg') no-repeat center center fixed;
+      background-size: cover;
+      transition: background 0.5s;
+    }
+    body.dark {
+      background: #111;
+      color: white;
+    }
+    .banner, .sub-banner, .score, .timer, .rules, .controls, .high-score {
+      position: absolute;
+      background: rgba(255, 255, 255, 0.85);
+      padding: 0.5rem 1rem;
+      font-weight: bold;
+      border-radius: 8px;
+      text-align: center;
+      z-index: 20;
+      transition: background 0.3s, color 0.3s;
+    }
+    body.dark .banner,
+    body.dark .sub-banner,
+    body.dark .score,
+    body.dark .timer,
+    body.dark .rules,
+    body.dark .controls,
+    body.dark .high-score {
+      background: rgba(30, 30, 30, 0.85);
+      color: white;
+    }
+    .banner { top: 0; width: 100%; font-size: 2rem; }
+    .sub-banner { top: 48px; width: 100%; font-size: 1.25rem; color: #d63384; animation: bounce 2s infinite; }
+    .score { top: 90px; left: 10px; font-size: 1.25rem; }
+    .timer { top: 90px; right: 10px; font-size: 1.25rem; }
+    .rules {
+      bottom: 60px; left: 50%; transform: translateX(-50%);
+      font-size: 1rem; max-width: 600px;
+    }
+    .controls {
+      bottom: 10px; left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+    }
+    .high-score { top: 140px; left: 50%; transform: translateX(-50%); font-size: 1rem; }
+    button {
+      padding: 0.5rem 1rem; font-size: 1rem;
+      cursor: pointer;
+      border: none; border-radius: 6px;
+      background-color: #3498db; color: white;
+      font-family: 'Patrick Hand', cursive;
+    }
+    input[type=range] {
+      accent-color: #3498db;
+    }
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-5px); }
+    }
+    .puppy {
+      position: absolute;
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      object-fit: cover;
+      cursor: pointer;
+      user-select: none;
+      transition: top 1s linear, left 1s linear;
+    }
+    #warningMessage {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(255, 0, 0, 0.85);
+      color: white;
+      padding: 1rem 2rem;
+      font-size: 1.5rem;
+      border-radius: 10px;
+      z-index: 1000;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="banner">Welcome to the Empyrean Virtual Office</div>
+  <div class="sub-banner">Click to catch the puppy!</div>
+  <div class="score">Captured Puppies: <span id="score">0</span></div>
+  <div class="timer">Time Left: <span id="timer">60</span>s | Level: <span id="level">1</span></div>
+  <div class="high-score">🏆 Highest Level: <span id="highScore">1</span></div>
+  <div class="rules">
+    <strong>Game Rules:</strong><br/>
+    Click the puppies as they roam the office!<br/>
+    Avoid the cats — 3 clicks and it’s game over!<br/>
+    Each level gives you 1 minute (minus 5 seconds per level).<br/>
+    Capture at least (total puppies - 3) to advance.<br/>
+    Catch all puppies early = instant level-up!<br/>
+    ⚠️ Cat click adds 2 more cats!
+  </div>
+
+  <div class="controls">
+    <button onclick="startLevel()">Start / Restart</button>
+    <button onclick="togglePause()"><span id="pauseBtnLabel">Pause</span></button>
+    <button onclick="toggleMute()">🔇 Mute / Unmute</button>
+    <label>
+      Volume:
+      <input type="range" min="0" max="1" step="0.01" id="volumeSlider" value="0.4" onchange="adjustVolume(this.value)">
+    </label>
+    <button onclick="toggleTheme()">🌗 Theme</button>
+  </div>
+
+  <div id="warningMessage">⚠️ Don't click the cats!</div>
+
+  <!-- Sound Effects -->
+  <audio id="captureSound" src="https://cdn.freesound.org/previews/155/155322_60285-lq.mp3"></audio>
+  <audio id="levelUpSound" src="https://cdn.freesound.org/previews/155/155322_60285-lq.mp3"></audio>
+  <audio id="catSound" src="https://cdn.freesound.org/previews/415/415209_5121236-lq.mp3"></audio>
+  <audio id="bgMusic" src="https://cdn.pixabay.com/audio/2025/05/29/audio_b92a610839.mp3" loop></audio>
+
+  <script>
+    const scoreDisplay = document.getElementById("score");
+    const timerDisplay = document.getElementById("timer");
+    const levelDisplay = document.getElementById("level");
+    const highScoreDisplay = document.getElementById("highScore");
+    const pauseBtnLabel = document.getElementById("pauseBtnLabel");
+    const captureSound = document.getElementById("captureSound");
+    const levelUpSound = document.getElementById("levelUpSound");
+    const catSound = document.getElementById("catSound");
+    const bgMusic = document.getElementById("bgMusic");
+
+    let score = 0, time = 60, level = 1, requiredCaptures = 0, totalPuppies = 0;
+    let catCaptures = 0;
+    let puppies = [], intervalIDs = [], countdown;
+    let paused = false;
+    let muted = false;
+
+    function getRandomPosition() {
+      const windowHeight = window.innerHeight;
+      const windowWidth = window.innerWidth;
+      const safeTop = Math.floor(Math.random() * (windowHeight - 300)) + 180;
+      const safeLeft = Math.floor(Math.random() * (windowWidth - 100));
+      return {
+        top: safeTop + "px",
+        left: safeLeft + "px"
+      };
+    }
+
+    function clearGame() {
+      puppies.forEach(p => document.body.removeChild(p));
+      puppies = [];
+      intervalIDs.forEach(id => clearInterval(id));
+      intervalIDs = [];
+      clearInterval(countdown);
+    }
+
+    function showWarning() {
+      const warning = document.getElementById("warningMessage");
+      warning.style.display = "block";
+      setTimeout(() => { warning.style.display = "none"; }, 1200);
+    }
+
+    function createCharacter(isCat = false) {
+      const img = document.createElement("img");
+      img.src = isCat
+        ? "https://cdn.pixabay.com/animation/2022/07/30/22/01/22-01-29-66_512.gif"
+        : "https://cdn.pixabay.com/animation/2025/05/01/20/42/20-42-27-118_256.gif";
+
+      img.classList.add("puppy");
+      const { top, left } = getRandomPosition();
+      img.style.top = top;
+      img.style.left = left;
+
+      img.addEventListener("click", () => {
+        if (paused) return;
+
+        document.body.removeChild(img);
+        puppies = puppies.filter(p => p !== img);
+
+        if (isCat) {
+          catCaptures++;
+          if (!muted) catSound.play();
+          showWarning();
+
+          setTimeout(() => createCharacter(true), 100);
+          setTimeout(() => createCharacter(true), 300);
+
+          if (catCaptures >= 3) {
+            clearInterval(countdown);
+            alert("😿 Game Over! You clicked too many cats!");
+            level = 1;
+            startLevel();
+            return;
+          }
+        } else {
+          score++;
+          scoreDisplay.textContent = score;
+          if (!muted) captureSound.play();
+
+          if (puppies.length === 0 && score >= requiredCaptures) {
+            clearInterval(countdown);
+            if (!muted) levelUpSound.play();
+            alert(`Level ${level} complete! You caught all puppies early!`);
+            updateHighScore(level + 1);
+            level++;
+            startLevel();
+          }
+        }
+      });
+
+      document.body.appendChild(img);
+      puppies.push(img);
+
+      const moveInterval = setInterval(() => {
+        if (!paused) {
+          const { top, left } = getRandomPosition();
+          img.style.top = top;
+          img.style.left = left;
+        }
+      }, 1500);
+      intervalIDs.push(moveInterval);
+    }
+
+    function startLevel() {
+      clearGame();
+      paused = false;
+      pauseBtnLabel.textContent = "Pause";
+      score = 0;
+      catCaptures = 0;
+      scoreDisplay.textContent = score;
+      time = Math.max(10, 60 - (level - 1) * 5);
+      timerDisplay.textContent = time;
+      levelDisplay.textContent = level;
+
+      totalPuppies = 10 + (level - 1) * 10;
+      requiredCaptures = totalPuppies - 3;
+      const totalCats = Math.floor(totalPuppies / 7);
+
+      for (let i = 0; i < totalPuppies; i++) setTimeout(() => createCharacter(false), i * 150);
+      for (let i = 0; i < totalCats; i++) setTimeout(() => createCharacter(true), i * 200);
+
+      countdown = setInterval(() => {
+        if (!paused) {
+          time--;
+          timerDisplay.textContent = time;
+          if (time <= 0) {
+            clearInterval(countdown);
+            if (score >= requiredCaptures) {
+              if (!muted) levelUpSound.play();
+              alert(`Level ${level} complete! You captured ${score}/${totalPuppies}. Moving on!`);
+              updateHighScore(level + 1);
+              level++;
+              startLevel();
+            } else {
+              alert(`Game Over! You captured ${score}/${totalPuppies}. Try again!`);
+              level = 1;
+              startLevel();
+            }
+          }
+        }
+      }, 1000);
+
+      if (!muted) bgMusic.play();
+    }
+
+    function togglePause() {
+      paused = !paused;
+      pauseBtnLabel.textContent = paused ? "Resume" : "Pause";
+      paused ? bgMusic.pause() : (muted ? null : bgMusic.play());
+    }
+
+    function toggleMute() {
+      muted = !muted;
+      bgMusic.muted = muted;
+    }
+
+    function adjustVolume(val) {
+      bgMusic.volume = parseFloat(val);
+    }
+
+    function toggleTheme() {
+      document.body.classList.toggle("dark");
+    }
+
+    function updateHighScore(newLevel) {
+      const current = parseInt(localStorage.getItem("highScore") || "1", 10);
+      if (newLevel > current) {
+        localStorage.setItem("highScore", newLevel);
+        highScoreDisplay.textContent = newLevel;
+      }
+    }
+
+    window.onload = () => {
+      highScoreDisplay.textContent = localStorage.getItem("highScore") || "1";
+      bgMusic.volume = 0.4;
+    };
+  </script>
+</body>
+</html>
